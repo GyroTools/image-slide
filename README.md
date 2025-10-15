@@ -105,13 +105,6 @@ image_slide(image_stack, "Image Stack")
 
 ## Input Requirements
 
-### Array Shapes
-The viewer accepts numpy arrays of arbitrary dimensions and shapes:
-- **2D arrays**: `(height, width)` - single grayscale image
-- **3D arrays**: `(n_images, height, width)` - grayscale image stacks
-- **4D arrays**: `(n_images, height, width, channels)` - color image stacks (automatically converted to grayscale)
-- **Higher dimensions**: Arrays with more dimensions are supported, with navigation through the first dimension
-
 ### Data Types
 - **Real arrays**: Any numeric numpy dtype (int, float, etc.)
 - **Complex arrays**: `complex64`, `complex128` with magnitude/phase/real/imaginary display options
