@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "image-slide"
-version = "1.0.0"
+version = "1.0.1"
 description = "An interactive image viewer for multidimensional numpy arrays"
 readme = "README.md"
 license = {text = "MIT"}

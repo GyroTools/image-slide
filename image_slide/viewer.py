@@ -376,6 +376,9 @@ class ImageSlideViewer:
         self.root.bind("<Home>", lambda e: self.set_image_index(0))
         self.root.bind("<End>", lambda e: self.set_image_index(self.n_images - 1))
 
+        # Bind mouse motion events for cursor position tracking
+        self.canvas.mpl_connect("motion_notify_event", self.on_mouse_motion)
+
         self.root.focus_set()  # Enable keyboard focus
 
         # Set initial values after all GUI elements are created
@@ -463,17 +466,8 @@ class ImageSlideViewer:
                 display_image.shape[0], 0
             )  # Invert y-axis for image display
 
-            # Update status with slice info
-            min_val, max_val = np.min(display_image), np.max(display_image)
-            shape_str = f"{display_image.shape[0]}x{display_image.shape[1]}"
-            # Get multidimensional indices for current image
-            multidim_indices = self.get_current_multidim_indices()
-            indices_str = f"[:, :, {', '.join(map(str, multidim_indices))}]"
-
-            slice_info = f"Index {indices_str} ({shape_str})"
-            self.status_var.set(
-                f"{slice_info} | Min: {min_val:.3f}, Max: {max_val:.3f}, Type: {display_image.dtype}"
-            )
+            # Update status without cursor info (cursor info will be added on mouse motion)
+            self.update_status_without_cursor()
 
             self.canvas.draw()
 
@@ -511,6 +505,53 @@ class ImageSlideViewer:
     def on_colormap_change(self, event):
         """Handle colormap change."""
         self.update_display()
+
+    def on_mouse_motion(self, event):
+        """Handle mouse motion to track cursor position."""
+        if event.inaxes == self.ax:
+            # Get the current image
+            display_image = self.get_display_image()
+
+            # Convert matplotlib coordinates to image pixel coordinates
+            # event.xdata and event.ydata are in data coordinates
+            x_pixel = int(round(event.xdata)) if event.xdata is not None else None
+            y_pixel = int(round(event.ydata)) if event.ydata is not None else None
+
+            # Check if coordinates are within image bounds
+            if (
+                x_pixel is not None
+                and y_pixel is not None
+                and 0 <= x_pixel < display_image.shape[1]
+                and 0 <= y_pixel < display_image.shape[0]
+            ):
+
+                # Get pixel value at cursor position
+                pixel_value = display_image[y_pixel, x_pixel]
+
+                # Update status with cursor position and pixel value
+                min_val, max_val = np.min(display_image), np.max(display_image)
+                shape_str = f"{display_image.shape[0]}x{display_image.shape[1]}"
+                multidim_indices = self.get_current_multidim_indices()
+                indices_str = f"[{y_pixel}, {x_pixel}, {', '.join(map(str, multidim_indices))}] | Value: {pixel_value:.3f}"
+                slice_info = f"Position: {indices_str}"
+                self.status_var.set(f"{slice_info} | Type: {display_image.dtype}")
+            else:
+                # Mouse is outside image bounds, show status without cursor info
+                self.update_status_without_cursor()
+        else:
+            # Mouse is outside the axes, show status without cursor info
+            self.update_status_without_cursor()
+
+    def update_status_without_cursor(self):
+        """Update status bar without cursor information."""
+        display_image = self.get_display_image()
+        min_val, max_val = np.min(display_image), np.max(display_image)
+        shape_str = ", ".join(map(str, self.shape))
+        multidim_indices = self.get_current_multidim_indices()
+        indices_str = f"[{shape_str}] | Value: 0.0"
+        slice_info = f"Array Size: {indices_str}"
+
+        self.status_var.set(f"{slice_info} | Type: {display_image.dtype}")
 
     def navigate_image(self, step):
         """Navigate to relative image index."""
