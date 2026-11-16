@@ -3,7 +3,6 @@ import warnings
 from dataclasses import dataclass
 from tkinter import messagebox, ttk
 
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -33,7 +32,7 @@ class ImageSlideViewer:
     - Image information display
     """
 
-    def __init__(self, image_stack, title="Image Slide Viewer"):
+    def __init__(self, image_stack, title="Image Slide Viewer", axes=None):
         """
         Initialize the image viewer.
 
@@ -43,21 +42,21 @@ class ImageSlideViewer:
             multidimensional numpy array
         title : str
             Window title
+        axes : tuple of two ints, optional
+            (row_axis, col_axis): the two array dimensions that form the displayed
+            image. All remaining dimensions are slid over. Default (0, 1).
+            For an array of shape (13, 3, 300, 728) use axes=(2, 3).
+            Can also be changed interactively in the GUI.
         """
 
-        self.shape = image_stack.shape
-
-        self.image_stack = np.reshape(
-            image_stack, (self.shape[0], self.shape[1], -1), order="F"
-        )
-        self.original_stack = self.image_stack.copy()
+        self.data = np.asarray(image_stack)
+        if self.data.ndim < 2:
+            raise ValueError("The array must have at least 2 dimensions")
+        self.shape = self.data.shape
         self.title = title
 
-        self.n_images = self.image_stack.shape[2]
-        self.current_index = 0
-
         # Check if array is complex
-        self.is_complex = np.iscomplexobj(self.image_stack)
+        self.is_complex = np.iscomplexobj(self.data)
 
         # Display options for complex arrays
         self.complex_display_options = ["magnitude", "phase", "real", "imaginary"]
@@ -65,7 +64,11 @@ class ImageSlideViewer:
 
         # Calculate global min/max for consistent scaling across all images
         self.global_scaling = {}  # Always use dict structure for consistency
-        self.calculate_global_scaling()  # Initialize GUI
+        self.calculate_global_scaling()
+
+        # Which dimensions form the image (rows, cols); the rest are slid over
+        self.current_index = 0
+        self.set_axes(*(axes if axes is not None else (0, 1)), update_gui=False)
 
         # Image display parameters
         self.level = self.get_global_scale_for_current_mode().p99
@@ -74,6 +77,37 @@ class ImageSlideViewer:
 
         self.setup_gui()
         self.update_display()
+
+    def set_axes(self, row_axis, col_axis, update_gui=True):
+        """
+        Choose which two dimensions of the array are displayed as the image
+        (rows, columns). All other dimensions are slid over (in Fortran order).
+        """
+        ndim = self.data.ndim
+        row_axis = row_axis % ndim
+        col_axis = col_axis % ndim
+        if row_axis == col_axis:
+            raise ValueError("row and column axis must be different")
+
+        self.row_axis, self.col_axis = row_axis, col_axis
+        self.slice_axes = tuple(
+            a for a in range(ndim) if a not in (row_axis, col_axis)
+        )
+        self.slice_shape = tuple(self.shape[a] for a in self.slice_axes)
+
+        # (H, W, N) view; reshape copies only if needed
+        permuted = np.transpose(self.data, (row_axis, col_axis) + self.slice_axes)
+        self.image_stack = np.reshape(
+            permuted, permuted.shape[:2] + (-1,), order="F"
+        )
+        self.n_images = self.image_stack.shape[2]
+        self.current_index = 0
+
+        if update_gui:
+            self.image_slider.configure(to=max(self.n_images - 1, 0))
+            self.image_slider.set(0)
+            self.index_label.config(text=f"1 / {self.n_images}")
+            self.update_display()
 
     def as_fortran(self, data):
         if not data.flags.f_contiguous:
@@ -103,7 +137,7 @@ class ImageSlideViewer:
             raise ValueError(f"z_index {z_index} is out of bounds [0, {self.n_images})")
 
         # Get the shape of dimensions that were flattened (exclude the last 2 spatial dimensions)
-        flattened_shape = self.shape[2:]
+        flattened_shape = self.slice_shape
 
         # Convert flat index back to multidimensional indices using numpy's unravel_index
         multidim_indices = np.unravel_index(z_index, flattened_shape, order="F")
@@ -134,7 +168,7 @@ class ImageSlideViewer:
         this would return z_index=5.
         """
         # Get the shape of dimensions that were flattened
-        flattened_shape = self.shape[:-2]
+        flattened_shape = self.slice_shape
 
         # Validate indices
         if len(multidim_indices) != len(flattened_shape):
@@ -149,7 +183,7 @@ class ImageSlideViewer:
                 )
 
         # Convert multidimensional indices to flat index using numpy's ravel_multi_index
-        z_index = np.ravel_multi_index(multidim_indices, flattened_shape)
+        z_index = np.ravel_multi_index(multidim_indices, flattened_shape, order="F")
 
         return z_index
 
@@ -173,13 +207,13 @@ class ImageSlideViewer:
             # For complex arrays, calculate scaling for each display mode
             for mode in self.complex_display_options:
                 if mode == "magnitude":
-                    values = np.abs(self.image_stack)
+                    values = np.abs(self.data)
                 elif mode == "phase":
-                    values = np.angle(self.image_stack)
+                    values = np.angle(self.data)
                 elif mode == "real":
-                    values = np.real(self.image_stack)
+                    values = np.real(self.data)
                 elif mode == "imaginary":
-                    values = np.imag(self.image_stack)
+                    values = np.imag(self.data)
 
                 # Calculate percentiles for robust scaling
                 p1, p99 = np.percentile(values, [1, 99])
@@ -193,10 +227,10 @@ class ImageSlideViewer:
                 )
         else:
             # For real arrays, calculate single scaling and store under 'real' key
-            p1, p99 = np.percentile(self.image_stack, [1, 99])
+            p1, p99 = np.percentile(self.data, [1, 99])
             self.global_scaling["real"] = GlobalScaling(
-                min=float(np.min(self.image_stack)),
-                max=float(np.max(self.image_stack)),
+                min=float(np.min(self.data)),
+                max=float(np.max(self.data)),
                 p1=float(p1),
                 p99=float(p99),
                 lower=float(p1),
@@ -334,6 +368,35 @@ class ImageSlideViewer:
         col += 1
         colormap_combo.bind("<<ComboboxSelected>>", self.on_colormap_change)
 
+        # Axis selection: which array dimensions form the displayed image
+        dims = [str(i) for i in range(self.data.ndim)]
+        ttk.Label(control_frame, text="Y:").grid(row=0, column=col, padx=(5, 2))
+        col += 1
+        self.row_axis_var = tk.StringVar(value=str(self.row_axis))
+        self.row_axis_combo = ttk.Combobox(
+            control_frame,
+            textvariable=self.row_axis_var,
+            values=dims,
+            state="readonly",
+            width=3,
+        )
+        self.row_axis_combo.grid(row=0, column=col, padx=(0, 5))
+        col += 1
+        ttk.Label(control_frame, text="X:").grid(row=0, column=col, padx=(0, 2))
+        col += 1
+        self.col_axis_var = tk.StringVar(value=str(self.col_axis))
+        self.col_axis_combo = ttk.Combobox(
+            control_frame,
+            textvariable=self.col_axis_var,
+            values=dims,
+            state="readonly",
+            width=3,
+        )
+        self.col_axis_combo.grid(row=0, column=col, padx=(0, 10))
+        col += 1
+        self.row_axis_combo.bind("<<ComboboxSelected>>", self.on_axes_change)
+        self.col_axis_combo.bind("<<ComboboxSelected>>", self.on_axes_change)
+
         # Level control
         scaling = self.get_global_scale_for_current_mode()
         ttk.Label(control_frame, text="Level:").grid(
@@ -350,6 +413,7 @@ class ImageSlideViewer:
             length=60,
         )
         self.level_slider.grid(row=0, column=col, sticky=tk.EW, padx=(0, 5))
+        level_col = col
         col += 1
 
         self.level_label = ttk.Label(control_frame, text="1.00")
@@ -363,9 +427,6 @@ class ImageSlideViewer:
         col += 1
 
         # Make the level slider column expandable
-        level_col = (
-            3 if self.is_complex else 2
-        )  # Level slider column (updated position)
         control_frame.columnconfigure(level_col, weight=1)
 
         # Bind keyboard events
@@ -502,6 +563,21 @@ class ImageSlideViewer:
             self.level_label.config(text=f"{self.level:.2f}")
         self.update_display()
 
+    def on_axes_change(self, event):
+        """Handle change of the displayed image axes (Y/X comboboxes)."""
+        new_row = int(self.row_axis_var.get())
+        new_col = int(self.col_axis_var.get())
+        if new_row == new_col:
+            # Picked the other combobox's axis: swap instead
+            if event.widget is self.row_axis_combo:
+                new_col = self.row_axis
+            else:
+                new_row = self.col_axis
+        self.row_axis_var.set(str(new_row))
+        self.col_axis_var.set(str(new_col))
+        if (new_row, new_col) != (self.row_axis, self.col_axis):
+            self.set_axes(new_row, new_col)
+
     def on_colormap_change(self, event):
         """Handle colormap change."""
         self.update_display()
@@ -531,8 +607,12 @@ class ImageSlideViewer:
                 # Update status with cursor position and pixel value
                 min_val, max_val = np.min(display_image), np.max(display_image)
                 shape_str = f"{display_image.shape[0]}x{display_image.shape[1]}"
-                multidim_indices = self.get_current_multidim_indices()
-                indices_str = f"[{y_pixel}, {x_pixel}, {', '.join(map(str, multidim_indices))}] | Value: {pixel_value:.3f}"
+                full_index = [0] * self.data.ndim
+                full_index[self.row_axis] = y_pixel
+                full_index[self.col_axis] = x_pixel
+                for axis, idx in zip(self.slice_axes, self.get_current_multidim_indices()):
+                    full_index[axis] = int(idx)
+                indices_str = f"[{', '.join(map(str, full_index))}] | Value: {pixel_value:.3f}"
                 slice_info = f"Position: {indices_str}"
                 self.status_var.set(f"{slice_info} | Type: {display_image.dtype}")
             else:
@@ -654,7 +734,7 @@ Display Settings:
         self.root.mainloop()
 
 
-def image_slide(image_stack, title="Image Slide Viewer"):
+def image_slide(image_stack, title="Image Slide Viewer", axes=None):
     """Launch the image slide viewer with given image stack."""
-    viewer = ImageSlideViewer(image_stack, title)
+    viewer = ImageSlideViewer(image_stack, title, axes=axes)
     viewer.run()

@@ -44,10 +44,16 @@ dev = [
     "flake8",
     "mypy",
 ]
+exe = [
+    "pyinstaller>=6.0",
+]
 examples = [
     "scipy",
     "scikit-image",
 ]
+
+[project.scripts]
+image-slide = "image_slide.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/GyroTools/image-slide"

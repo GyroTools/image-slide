@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 
-def image_slide(image_stack, title="Image Slide Viewer"):
+def image_slide(image_stack, title="Image Slide Viewer", axes=None):
     """
     Convenience function to quickly launch the image slide viewer.
 
@@ -32,6 +32,10 @@ def image_slide(image_stack, title="Image Slide Viewer"):
         Shape: (n_images, height, width) or (n_images, height, width, channels)
     title : str
         Window title
+    axes : tuple of two ints, optional
+        (row_axis, col_axis) dimensions to display as image, e.g. (2, 3) for an
+        array of shape (13, 3, 300, 728). All other dimensions are slid over.
+        Default (0, 1). Also selectable in the GUI.
 
     Returns:
     --------
@@ -47,5 +51,5 @@ def image_slide(image_stack, title="Image Slide Viewer"):
     >>> images = np.random.random((10, 100, 100))
     >>> image_slide(images, "My Images")
     """
-    viewer = ImageSlideViewer(image_stack, title)
+    viewer = ImageSlideViewer(image_stack, title, axes=axes)
     viewer.run()

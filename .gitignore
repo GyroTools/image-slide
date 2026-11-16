@@ -19,3 +19,4 @@ tests/elisabetta.py
 tests/playground.py
 
 .idea/
+/*.spec
